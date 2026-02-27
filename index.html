@@ -671,26 +671,45 @@
 
       // Pointer events with a fallback for older Safari: use touch/mouse listeners
       function bindInput(){
+        // Hold mechanic:
+        // - DOWN starts a timer
+        // - If held beyond threshold => HOLD (faster drain, NO score)
+        // - If released before threshold => TAP
+        const HOLD_THRESHOLD_MS = 240;
+        let holdTimer = 0;
+        let heldActivated = false;
+
         const down = (e) => {
           if (!running) return;
           pointerDown = true;
-          setHolding(true);
-          // prevent focus outline / selection
+          heldActivated = false;
+
+          // Start hold timer
+          if (holdTimer) clearTimeout(holdTimer);
+          holdTimer = setTimeout(() => {
+            // Enter hold mode (no score changes while holding)
+            if (!running || !pointerDown) return;
+            heldActivated = true;
+            setHolding(true);
+            vib(10);
+          }, HOLD_THRESHOLD_MS);
+
           if (e && e.preventDefault) e.preventDefault();
         };
 
         const up = (e) => {
           if (!running) return;
+          if (!pointerDown) return;
           pointerDown = false;
-          setHolding(false);
-          if (e && e.preventDefault) e.preventDefault();
-        };
 
-        const tap = (e) => {
-          if (!running) return;
-          // If user is holding, we do NOT score on hold; but a quick tap is down+up.
-          // We treat clicks/taps as a tap action regardless; holding just changes drain.
-          onTap(nowMs());
+          if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+
+          // If we were in hold mode, exit it.
+          if (holding) setHolding(false);
+
+          // A quick down->up counts as a tap.
+          if (!heldActivated) onTap(nowMs());
+
           if (e && e.preventDefault) e.preventDefault();
         };
 
@@ -701,22 +720,10 @@
         tapBtn.addEventListener("touchstart", down, { passive:false });
         tapBtn.addEventListener("touchend", up, { passive:false });
         tapBtn.addEventListener("touchcancel", up, { passive:false });
-        tapBtn.addEventListener("touchstart", (e) => {
-          // Interpret touchstart+end as a tap later; but we also allow immediate tap on start
-          // for snappy one-thumb play.
-          onTap(nowMs());
-          e.preventDefault();
-        }, { passive:false });
 
         // Mouse
         tapBtn.addEventListener("mousedown", down);
         window.addEventListener("mouseup", up);
-        tapBtn.addEventListener("click", (e) => {
-          // click already triggers onTap for mouse
-          // (for touch, we already tapped on touchstart)
-          if (e && e.pointerType === "touch") return;
-          tap(e);
-        });
 
         // Keyboard (optional): space/enter as tap
         window.addEventListener("keydown", (e) => {
