@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#05060a" />
+  <title>Paradox Tap</title>
+  <style>
+    /*
+      Paradox Tap — single-file mobile web game
+      - Offline friendly
+      - No external assets
+      - Touch + mouse
+      - requestAnimationFrame loop
+    */
+
+    :root{
+      --bg0:#05060a;
+      --bg1:#070916;
+      --text:#e8ecff;
+      --muted:#97a3c9;
+      --neon1:#7c4dff;
+      --neon2:#00e5ff;
+      --neon3:#00ff9d;
+      --danger:#ff2e63;
+      --warn:#ffd166;
+      --ok:#00ff9d;
+      --shadow: rgba(0,0,0,.55);
+      --tapSize: min(68vw, 320px);
+      --radius: 18px;
+      --safeTop: env(safe-area-inset-top);
+      --safeBot: env(safe-area-inset-bottom);
+    }
+
+    *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height:100%; }
+    body{
+      margin:0;
+      background: radial-gradient(1200px 700px at 50% 25%, rgba(124,77,255,.18), transparent 60%),
+                  radial-gradient(900px 600px at 40% 80%, rgba(0,229,255,.12), transparent 62%),
+                  linear-gradient(180deg, var(--bg0), var(--bg1));
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      overflow:hidden;
+      user-select:none;
+      -webkit-user-select:none;
+      touch-action: manipulation;
+    }
+
+    /* subtle animated grid */
+    .grid{
+      position:fixed;
+      inset:-40vh -40vw;
+      background-image:
+        linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+      background-size: 44px 44px;
+      transform: perspective(800px) rotateX(62deg) translateY(10vh);
+      filter: drop-shadow(0 12px 28px rgba(0,0,0,.35));
+      opacity:.25;
+      animation: gridFloat 8s linear infinite;
+      pointer-events:none;
+    }
+    @keyframes gridFloat{
+      0%{ background-position: 0 0, 0 0; }
+      100%{ background-position: 0 220px, 220px 0; }
+    }
+
+    .wrap{
+      position:relative;
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      padding: calc(14px + var(--safeTop)) 14px calc(14px + var(--safeBot));
+      gap: 12px;
+    }
+
+    .top{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:4px;
+      padding-top: 2px;
+    }
+
+    .score{
+      font-weight: 850;
+      font-size: clamp(38px, 8.5vw, 54px);
+      letter-spacing: 0.5px;
+      text-shadow:
+        0 0 18px rgba(0,229,255,.28),
+        0 0 28px rgba(124,77,255,.22);
+      line-height: 1;
+    }
+
+    .high{
+      font-size: 14px;
+      color: var(--muted);
+      letter-spacing: .3px;
+    }
+
+    .mid{
+      flex:1;
+      display:grid;
+      place-items:center;
+      position:relative;
+    }
+
+    .tapZone{
+      position:relative;
+      width: var(--tapSize);
+      height: var(--tapSize);
+      display:grid;
+      place-items:center;
+      border-radius: 999px;
+      transform: translate(var(--dx, 0px), var(--dy, 0px));
+      transition: transform 160ms ease;
+    }
+
+    .tapBtn{
+      width: 100%;
+      height: 100%;
+      border-radius: 999px;
+      border: 2px solid rgba(0,229,255,.35);
+      background:
+        radial-gradient(55% 55% at 50% 40%, rgba(0,229,255,.22), transparent 62%),
+        radial-gradient(70% 70% at 50% 65%, rgba(124,77,255,.22), transparent 65%),
+        linear-gradient(180deg, rgba(15,18,40,.78), rgba(9,10,22,.9));
+      box-shadow:
+        0 26px 60px rgba(0,0,0,.62),
+        0 0 0 6px rgba(124,77,255,.12),
+        0 0 40px rgba(0,229,255,.18),
+        inset 0 0 28px rgba(0,229,255,.12);
+      display:grid;
+      place-items:center;
+      cursor:pointer;
+      outline:none;
+      position:relative;
+      overflow:hidden;
+    }
+
+    .tapBtn:active{
+      transform: scale(.985);
+      box-shadow:
+        0 18px 44px rgba(0,0,0,.62),
+        0 0 0 8px rgba(124,77,255,.14),
+        0 0 54px rgba(0,229,255,.22),
+        inset 0 0 34px rgba(0,229,255,.16);
+    }
+
+    .tapLabel{
+      text-align:center;
+      padding: 0 18px;
+      z-index: 2;
+    }
+    .tapTitle{
+      font-weight: 900;
+      font-size: clamp(22px, 5.2vw, 30px);
+      letter-spacing: .6px;
+      text-transform: uppercase;
+    }
+    .tapSub{
+      margin-top: 6px;
+      font-size: 13px;
+      color: rgba(232,236,255,.78);
+      letter-spacing: .25px;
+    }
+
+    /* pulse ring */
+    .tapBtn::before{
+      content:"";
+      position:absolute;
+      inset:-18px;
+      border-radius: 999px;
+      background: conic-gradient(from 160deg,
+        rgba(0,229,255,.0), rgba(0,229,255,.35), rgba(124,77,255,.35), rgba(0,255,157,.28), rgba(0,229,255,.0)
+      );
+      filter: blur(10px);
+      opacity: .45;
+      transform: rotate(0deg);
+      animation: spin 6.5s linear infinite;
+      z-index: 1;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* rhythmic glow boost */
+    .rhythm .tapBtn{
+      border-color: rgba(0,255,157,.55);
+      box-shadow:
+        0 26px 60px rgba(0,0,0,.62),
+        0 0 0 7px rgba(0,255,157,.14),
+        0 0 70px rgba(0,255,157,.22),
+        0 0 34px rgba(0,229,255,.12),
+        inset 0 0 30px rgba(0,255,157,.12);
+    }
+    .rhythm .tapBtn::before{
+      opacity:.62;
+      filter: blur(9px);
+    }
+
+    /* bottom bar */
+    .bottom{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      padding: 10px 10px 12px;
+      border-radius: var(--radius);
+      background: rgba(10,11,25,.55);
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: 0 12px 36px rgba(0,0,0,.38);
+    }
+
+    .row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      color: rgba(232,236,255,.86);
+      font-size: 13px;
+      letter-spacing: .2px;
+    }
+    .row .pill{
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      min-width: 92px;
+      text-align:center;
+    }
+
+    .bar{
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      overflow:hidden;
+      border: 1px solid rgba(255,255,255,.09);
+      box-shadow: inset 0 0 14px rgba(0,0,0,.4);
+    }
+
+    .fill{
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--ok), var(--warn), var(--danger));
+      transform-origin: left center;
+      will-change: width;
+      transition: width 80ms linear;
+      box-shadow: 0 0 18px rgba(255,46,99,.12);
+    }
+
+    /* overlay */
+    .overlay{
+      position:fixed;
+      inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding: 18px;
+      background: rgba(0,0,0,.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 50;
+    }
+    .overlay.show{ display:flex; }
+
+    .card{
+      width:min(520px, 92vw);
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(16,18,40,.92), rgba(10,11,25,.94));
+      border: 1px solid rgba(255,255,255,.10);
+      box-shadow: 0 26px 70px rgba(0,0,0,.65);
+      padding: 18px 16px 16px;
+      text-align:center;
+      position:relative;
+      overflow:hidden;
+    }
+    .card::before{
+      content:"";
+      position:absolute;
+      inset:-60px;
+      background: radial-gradient(closest-side at 30% 20%, rgba(255,46,99,.22), transparent 60%),
+                  radial-gradient(closest-side at 70% 80%, rgba(0,229,255,.18), transparent 62%);
+      filter: blur(0px);
+      opacity:.9;
+      pointer-events:none;
+    }
+
+    .card h1{
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+      position:relative;
+      z-index:1;
+    }
+    .card p{
+      margin: 10px 0 0;
+      color: rgba(232,236,255,.82);
+      position:relative;
+      z-index:1;
+    }
+
+    .bigNum{
+      margin-top: 12px;
+      font-size: 50px;
+      font-weight: 950;
+      letter-spacing: .6px;
+      text-shadow: 0 0 22px rgba(255,46,99,.25), 0 0 30px rgba(0,229,255,.12);
+      position:relative;
+      z-index:1;
+    }
+
+    .btn{
+      margin-top: 14px;
+      width: 100%;
+      padding: 14px 14px;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: .5px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      color: var(--text);
+      background: linear-gradient(90deg, rgba(124,77,255,.75), rgba(0,229,255,.55));
+      box-shadow: 0 16px 44px rgba(0,0,0,.45);
+      cursor:pointer;
+      position:relative;
+      z-index:1;
+    }
+    .btn:active{ transform: translateY(1px); }
+
+    /* Chaos effects */
+    .shake{ animation: shake .35s linear 0s 1; }
+    @keyframes shake{
+      0%{ transform: translate3d(0,0,0); }
+      15%{ transform: translate3d(-6px, 2px, 0); }
+      30%{ transform: translate3d(7px, -3px, 0); }
+      45%{ transform: translate3d(-8px, -1px, 0); }
+      60%{ transform: translate3d(6px, 4px, 0); }
+      75%{ transform: translate3d(-4px, -3px, 0); }
+      100%{ transform: translate3d(0,0,0); }
+    }
+
+    .banner{
+      position:absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: .3px;
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.10);
+      color: rgba(232,236,255,.92);
+      box-shadow: 0 12px 34px rgba(0,0,0,.35);
+      opacity: 0;
+      transition: opacity 140ms ease, transform 140ms ease;
+      pointer-events:none;
+    }
+    .banner.show{
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Reduce motion */
+    @media (prefers-reduced-motion: reduce){
+      .grid{ animation:none; }
+      .tapBtn::before{ animation:none; }
+      .shake{ animation:none; }
+      .fill{ transition:none; }
+      .tapZone{ transition:none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="grid" aria-hidden="true"></div>
+
+  <div class="wrap" id="app">
+    <div class="banner" id="banner">CHAOS</div>
+
+    <header class="top">
+      <div class="score" id="score">0</div>
+      <div class="high" id="high">High: 0</div>
+    </header>
+
+    <main class="mid">
+      <div class="tapZone" id="tapZone">
+        <button class="tapBtn" id="tapBtn" aria-label="Tap">
+          <div class="tapLabel">
+            <div class="tapTitle">Tap</div>
+            <div class="tapSub" id="tapSub">+1 score • +6 instability</div>
+          </div>
+        </button>
+      </div>
+    </main>
+
+    <footer class="bottom">
+      <div class="row">
+        <div>Instability</div>
+        <div class="pill" id="instText">0 / 100</div>
+      </div>
+      <div class="bar" aria-label="Instability bar">
+        <div class="fill" id="instFill"></div>
+      </div>
+      <div class="row">
+        <div class="pill" id="modePill">MODE: NORMAL</div>
+        <div class="pill" id="multPill">MULT: 1x</div>
+      </div>
+    </footer>
+  </div>
+
+  <div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-label="Game Over">
+    <div class="card">
+      <h1>Game Over</h1>
+      <p>Your timeline collapsed.</p>
+      <div class="bigNum" id="finalScore">0</div>
+      <p id="finalHigh">High: 0</p>
+      <button class="btn" id="restartBtn">Restart</button>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      // ---------------------------
+      // Utilities
+      // ---------------------------
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const nowMs = () => (performance && performance.now) ? performance.now() : Date.now();
+      const vib = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch(_){} };
+      const rnd = (a,b) => a + Math.random()*(b-a);
+
+      // Prevent double-tap zoom / scroll while playing
+      document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive:false });
+      document.addEventListener("touchmove", (e) => {
+        // block scroll while interacting
+        if (e.touches && e.touches.length) e.preventDefault();
+      }, { passive:false });
+
+      // ---------------------------
+      // DOM
+      // ---------------------------
+      const app = document.getElementById("app");
+      const scoreEl = document.getElementById("score");
+      const highEl = document.getElementById("high");
+      const instTextEl = document.getElementById("instText");
+      const instFillEl = document.getElementById("instFill");
+      const tapZone = document.getElementById("tapZone");
+      const tapBtn = document.getElementById("tapBtn");
+      const tapSub = document.getElementById("tapSub");
+      const overlay = document.getElementById("overlay");
+      const finalScoreEl = document.getElementById("finalScore");
+      const finalHighEl = document.getElementById("finalHigh");
+      const restartBtn = document.getElementById("restartBtn");
+      const modePill = document.getElementById("modePill");
+      const multPill = document.getElementById("multPill");
+      const banner = document.getElementById("banner");
+
+      // ---------------------------
+      // Game constants
+      // ---------------------------
+      const INST_MAX = 100;
+      const TAP_INST_ADD = 6;
+      const DRAIN_PER_S = 12;
+      const HOLD_DRAIN_MULT = 2.25; // holding drains faster
+
+      const RHYTHM_WINDOW_MS = 100;      // consistency tolerance
+      const RHYTHM_TRACK = 5;            // last 5 tap intervals
+      const RHYTHM_MULT = 2;             // 2x score when consistent
+
+      const PARADOX_COOLDOWN_MS = 850;   // avoid spamming
+      const PARADOX_MIN_INST = 70;
+
+      // Paradox effect durations
+      const FX_SHORT = [1000, 2000];
+
+      // ---------------------------
+      // Game state
+      // ---------------------------
+      let score = 0;
+      let high = 0;
+      let instability = 0;
+
+      let running = true;
+      let lastT = nowMs();
+
+      // input/hold state
+      let holding = false;
+      let pointerDown = false;
+
+      // rhythm state
+      let tapTimes = []; // timestamps of last taps
+      let rhythmOn = false;
+
+      // paradox state
+      let lastParadoxAt = 0;
+      let scoreMult = 1;
+      let scoreMultUntil = 0;
+
+      let reverseTap = false;
+      let reverseUntil = 0;
+
+      let shiftUntil = 0;
+      let shiftX = 0, shiftY = 0;
+
+      let shakeUntil = 0;
+
+      // ---------------------------
+      // Persistence
+      // ---------------------------
+      const LS_KEY = "paradoxtap_highscore_v1";
+      const loadHigh = () => {
+        try {
+          const v = parseInt(localStorage.getItem(LS_KEY) || "0", 10);
+          return Number.isFinite(v) ? v : 0;
+        } catch(_) {
+          return 0;
+        }
+      };
+      const saveHigh = (v) => {
+        try { localStorage.setItem(LS_KEY, String(v|0)); } catch(_){}
+      };
+
+      // ---------------------------
+      // UI helpers
+      // ---------------------------
+      function setBanner(text, kind = ""){
+        banner.textContent = text;
+        banner.style.borderColor = kind === "danger" ? "rgba(255,46,99,.35)" : "rgba(255,255,255,.10)";
+        banner.style.color = kind === "danger" ? "rgba(255,220,230,.95)" : "rgba(232,236,255,.92)";
+        banner.classList.add("show");
+        clearTimeout(setBanner._t);
+        setBanner._t = setTimeout(() => banner.classList.remove("show"), 900);
+      }
+
+      function renderUI(){
+        scoreEl.textContent = String(score);
+        highEl.textContent = `High: ${high}`;
+
+        const inst = clamp(instability, 0, INST_MAX);
+        instTextEl.textContent = `${inst.toFixed(0)} / ${INST_MAX}`;
+        instFillEl.style.width = `${(inst / INST_MAX) * 100}%`;
+
+        const mode = reverseTap ? "REVERSE" : "NORMAL";
+        modePill.textContent = `MODE: ${mode}`;
+        multPill.textContent = `MULT: ${scoreMult}x`;
+
+        tapSub.textContent = reverseTap
+          ? "Tap: -instability (no score)"
+          : `+${scoreMult} score • +${TAP_INST_ADD} instability`;
+
+        // rhythmic glow
+        if (rhythmOn) tapZone.classList.add("rhythm");
+        else tapZone.classList.remove("rhythm");
+
+        // position shift effect
+        if (nowMs() < shiftUntil) {
+          tapZone.style.setProperty("--dx", `${shiftX}px`);
+          tapZone.style.setProperty("--dy", `${shiftY}px`);
+        } else {
+          tapZone.style.setProperty("--dx", `0px`);
+          tapZone.style.setProperty("--dy", `0px`);
+        }
+      }
+
+      // ---------------------------
+      // Rhythm detection
+      // Track last 5 tap intervals; if consistent within ±100ms, enable rhythm.
+      // ---------------------------
+      function updateRhythm(){
+        if (tapTimes.length < RHYTHM_TRACK + 1) { rhythmOn = false; return; }
+
+        // compute last 5 intervals
+        const times = tapTimes.slice(- (RHYTHM_TRACK + 1));
+        const intervals = [];
+        for (let i = 1; i < times.length; i++) intervals.push(times[i] - times[i-1]);
+
+        const avg = intervals.reduce((a,b)=>a+b,0) / intervals.length;
+        let ok = true;
+        for (const iv of intervals) {
+          if (Math.abs(iv - avg) > RHYTHM_WINDOW_MS) { ok = false; break; }
+        }
+        rhythmOn = ok;
+      }
+
+      // ---------------------------
+      // Paradox events
+      // Random chaotic effects when instability > 70
+      // ---------------------------
+      function maybeTriggerParadox(t){
+        if (instability <= PARADOX_MIN_INST) return;
+        if ((t - lastParadoxAt) < PARADOX_COOLDOWN_MS) return;
+
+        // chance scales slightly with instability
+        const p = clamp((instability - PARADOX_MIN_INST) / (INST_MAX - PARADOX_MIN_INST), 0, 1);
+        const chance = 0.012 + p * 0.028; // ~1.2%..4% per frame-ish; adjusted by RAF
+        if (Math.random() > chance) return;
+
+        lastParadoxAt = t;
+        const dur = Math.floor(rnd(FX_SHORT[0], FX_SHORT[1]));
+
+        // Choose an effect
+        const roll = Math.random();
+        if (roll < 0.25) {
+          // Screen shake
+          shakeUntil = t + dur;
+          app.classList.remove("shake");
+          // restart CSS anim
+          void app.offsetWidth;
+          app.classList.add("shake");
+          setBanner("PARADOX: SHAKE");
+          vib(18);
+          setTimeout(() => app.classList.remove("shake"), 420);
+        } else if (roll < 0.50) {
+          // Button shift
+          shiftUntil = t + dur;
+          shiftX = rnd(-18, 18);
+          shiftY = rnd(-22, 22);
+          setBanner("PARADOX: SHIFT");
+          vib(10);
+        } else if (roll < 0.75) {
+          // Double score for 2s
+          scoreMult = 2;
+          scoreMultUntil = t + 2000;
+          setBanner("PARADOX: 2X SCORE");
+          vib(14);
+        } else {
+          // Reverse tap mode
+          reverseTap = true;
+          reverseUntil = t + dur;
+          setBanner("PARADOX: REVERSE", "danger");
+          vib(22);
+        }
+      }
+
+      // ---------------------------
+      // Tap / Hold
+      // ---------------------------
+      function onTap(t){
+        if (!running) return;
+
+        // Track rhythm
+        tapTimes.push(t);
+        if (tapTimes.length > 18) tapTimes.shift();
+        updateRhythm();
+
+        if (reverseTap) {
+          // Reverse mode: tap reduces instability, no score.
+          instability = clamp(instability - 10, 0, INST_MAX);
+          vib(8);
+          setBanner("REVERSE: -instability");
+          return;
+        }
+
+        // Normal scoring
+        const mult = rhythmOn ? RHYTHM_MULT : scoreMult;
+        // Note: if paradox 2x is active and rhythm is active, we keep rhythm at 2x (no stacking)
+        // to keep things readable and balanced.
+        score += mult;
+
+        instability += TAP_INST_ADD;
+        vib(6);
+      }
+
+      function setHolding(v){
+        holding = v;
+        // subtle banner for hold state
+        if (holding) setBanner("HOLD: DRAIN BOOST");
+      }
+
+      // Pointer events with a fallback for older Safari: use touch/mouse listeners
+      function bindInput(){
+        const down = (e) => {
+          if (!running) return;
+          pointerDown = true;
+          setHolding(true);
+          // prevent focus outline / selection
+          if (e && e.preventDefault) e.preventDefault();
+        };
+
+        const up = (e) => {
+          if (!running) return;
+          pointerDown = false;
+          setHolding(false);
+          if (e && e.preventDefault) e.preventDefault();
+        };
+
+        const tap = (e) => {
+          if (!running) return;
+          // If user is holding, we do NOT score on hold; but a quick tap is down+up.
+          // We treat clicks/taps as a tap action regardless; holding just changes drain.
+          onTap(nowMs());
+          if (e && e.preventDefault) e.preventDefault();
+        };
+
+        // Prevent context menu
+        tapBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+
+        // Touch
+        tapBtn.addEventListener("touchstart", down, { passive:false });
+        tapBtn.addEventListener("touchend", up, { passive:false });
+        tapBtn.addEventListener("touchcancel", up, { passive:false });
+        tapBtn.addEventListener("touchstart", (e) => {
+          // Interpret touchstart+end as a tap later; but we also allow immediate tap on start
+          // for snappy one-thumb play.
+          onTap(nowMs());
+          e.preventDefault();
+        }, { passive:false });
+
+        // Mouse
+        tapBtn.addEventListener("mousedown", down);
+        window.addEventListener("mouseup", up);
+        tapBtn.addEventListener("click", (e) => {
+          // click already triggers onTap for mouse
+          // (for touch, we already tapped on touchstart)
+          if (e && e.pointerType === "touch") return;
+          tap(e);
+        });
+
+        // Keyboard (optional): space/enter as tap
+        window.addEventListener("keydown", (e) => {
+          if (!running) return;
+          if (e.code === "Space" || e.code === "Enter") {
+            onTap(nowMs());
+            e.preventDefault();
+          }
+        });
+      }
+
+      // ---------------------------
+      // Game over / restart
+      // ---------------------------
+      function gameOver(){
+        running = false;
+        holding = false;
+        pointerDown = false;
+        vib(45);
+
+        if (score > high) {
+          high = score;
+          saveHigh(high);
+        }
+
+        finalScoreEl.textContent = String(score);
+        finalHighEl.textContent = `High: ${high}`;
+        overlay.classList.add("show");
+      }
+
+      function restart(){
+        overlay.classList.remove("show");
+        score = 0;
+        instability = 0;
+        running = true;
+
+        tapTimes = [];
+        rhythmOn = false;
+
+        lastParadoxAt = 0;
+        scoreMult = 1;
+        scoreMultUntil = 0;
+        reverseTap = false;
+        reverseUntil = 0;
+        shiftUntil = 0;
+        shakeUntil = 0;
+
+        lastT = nowMs();
+        setBanner("STABLE TIMELINE");
+        requestAnimationFrame(loop);
+      }
+
+      restartBtn.addEventListener("click", (e) => { e.preventDefault(); restart(); });
+
+      // ---------------------------
+      // Main loop (requestAnimationFrame)
+      // ---------------------------
+      function drainRate(inst){
+        // base drain is 12/s. When instability > 70, drain slows slightly.
+        // "slows slightly" -> reduce by up to ~22% as instability approaches 100.
+        if (inst <= 70) return DRAIN_PER_S;
+        const p = clamp((inst - 70) / 30, 0, 1);
+        return DRAIN_PER_S * (1 - 0.22 * p);
+      }
+
+      function loop(t){
+        if (!running) return;
+
+        const dt = clamp((t - lastT) / 1000, 0, 0.05); // clamp for stability
+        lastT = t;
+
+        // Expire timed effects
+        if (scoreMultUntil && t >= scoreMultUntil) {
+          scoreMult = 1;
+          scoreMultUntil = 0;
+        }
+        if (reverseUntil && t >= reverseUntil) {
+          reverseTap = false;
+          reverseUntil = 0;
+        }
+
+        // Drain instability
+        let rate = drainRate(instability);
+        if (holding && pointerDown) rate *= HOLD_DRAIN_MULT;
+        instability = clamp(instability - rate * dt, 0, INST_MAX);
+
+        // Rhythm uses glow only; multiplier is applied on tap.
+
+        // Random paradox events when instability is high
+        maybeTriggerParadox(t);
+
+        // Game over if instability reaches 100
+        if (instability >= INST_MAX - 1e-6) {
+          instability = INST_MAX;
+          renderUI();
+          gameOver();
+          return;
+        }
+
+        renderUI();
+        requestAnimationFrame(loop);
+      }
+
+      // ---------------------------
+      // Boot
+      // ---------------------------
+      function boot(){
+        high = loadHigh();
+        highEl.textContent = `High: ${high}`;
+        bindInput();
+
+        // Start stable
+        setBanner("TAP THE CORE");
+        lastT = nowMs();
+        renderUI();
+        requestAnimationFrame(loop);
+      }
+
+      boot();
+    })();
+  </script>
+</body>
+</html>
